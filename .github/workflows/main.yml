@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "master" ]
   schedule:
-    - cron: '40 7 * * 1-5' # 每天北京时间 15:40 运行
+    - cron: '40 7 * * 1-5' # 北京时间 15:40 运行
   workflow_dispatch: 
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
           channels: conda-forge
 
-      - name: 安装核心科学计算库
+      - name: 安装核心库
         shell: bash -l {0}
         run: |
           conda install -c conda-forge ta-lib numpy pandas matplotlib scipy -y
@@ -33,13 +33,13 @@ jobs:
           pip install akshare tushare --upgrade
           pip install -r requirements.txt
 
-      - name: ⚡️配置初始化并运行
+      - name: ⚡️初始化并全量运行
         shell: bash -l {0}
         env:
           TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
-          # 1. 这一步是关键：创建一个基础的配置文件，防止 settings.py 报错
+          # 现场生成配置，解决 FileNotFoundError
           cat <<EOF > config.yaml
           cron: false
           data_dir: "data"
@@ -50,10 +50,8 @@ jobs:
             pushplus_token: "$PP_TOKEN"
           EOF
           
-          # 2. 确保数据目录存在
           mkdir -p data
-          
-          # 3. 启动程序 (它会自动去抓 3000 只股票覆盖上面的 codes: [])
+          # 启动导弹
           python main.py
 
       - name: 上传结果
