@@ -1,19 +1,20 @@
-# 1. 基本配置
-cron: false      # 在 GitHub Actions 运行，这里保持 false 即可
-data_dir: "data" # 数据库存放目录
-end_date: ""     # 留空代表运行到今天
+# --- 基础运行配置 ---
+cron: false
+data_dir: "data"
+end_date: ""  # 留空代表运行到今天
 
-# 2. 核心：只看三花智控
-# 把你原来的 58 只股票全部删掉，只留下这一行
-codes: 
+# --- 核心：股票名单 ---
+# 注意：短横线 - 前面必须有两个空格
+codes:
   - '002050.SZ'
 
-# 3. 推送配置：改用 PushPlus
-# 这里的 enable 设为 true，token 留空（GitHub 脚本会自动帮你填入）
+# --- 推送配置 (PushPlus 专用) ---
 push:
   enable: true
-  pushplus_token: ""  # 我们在 .yml 脚本里会注入 secrets.PUSHPLUS_TOKEN
   
-# 如果你之前的代码里只认 wxpusher 字段，可以保留这些占位符
+  # 关键点：这里留空即可，GitHub Actions 会自动把你存的 Token 填进去
+  pushplus_token: ""
+  
+  # 下面这两个留空，保留它们是为了防止程序报错说“找不到字段”
   wxpusher_uid: ""
   wxpusher_token: ""
