@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "master" ]
   schedule:
-    - cron: '40 7 * * 1-5' # 每天北京时间 15:40 运行
+    - cron: '40 7 * * 1-5'
   workflow_dispatch: 
 
 jobs:
@@ -21,31 +21,45 @@ jobs:
           python-version: "3.11"
           channels: conda-forge
 
-      - name: 安装核心科学计算库 (Conda 方式)
+      - name: 安装核心科学计算库
         shell: bash -l {0}
         run: |
           conda install -c conda-forge ta-lib numpy pandas matplotlib scipy -y
 
-      - name: 安装其余依赖 (Pip 方式)
+      - name: 安装其余依赖
         shell: bash -l {0}
         run: |
           pip install --upgrade pip
           pip install akshare --upgrade
           pip install -r requirements.txt
 
-      - name: 配置注入 (关键修改步骤)
+      - name: ⚡️生成专属配置文件 (核心修改)
         shell: bash -l {0}
         env:
           TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
-          # 注意：这里删除了 cp config.yaml.example ... 那一行
-          # 程序现在会直接使用你提交的 config.yaml (里面只有三花智控)
+          # 这里我们不再修改文件，而是直接"写"一个新的 config.yaml
+          # 这样绝对不会报 "No such file" 错误，也绝对是单只股票
           
-          # 下面这两行保留，用于自动填入密码
-          # 如果你的 config.yaml 里没有 tushare_token 字段，这行也不会报错
-          sed -i "s/tushare_token: .*/tushare_token: '$TS_TOKEN'/g" config.yaml
-          sed -i "s/pushplus_token: .*/pushplus_token: '$PP_TOKEN'/g" config.yaml
+          cat <<EOF > config.yaml
+          cron: false
+          data_dir: "data"
+          end_date: ""
+          
+          # 强制锁定：只看三花智控
+          codes: ['002050.SZ']
+          
+          push:
+            enable: true
+            # 下面这行会自动把你的 Secret 填进去
+            pushplus_token: "$PP_TOKEN"
+            wxpusher_uid: ""
+            wxpusher_token: ""
+          EOF
+          
+          # 打印一下看看，确保内容是对的 (调试用)
+          cat config.yaml
           
           mkdir -p data
 
