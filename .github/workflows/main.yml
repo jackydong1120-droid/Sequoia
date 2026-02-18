@@ -33,16 +33,27 @@ jobs:
           pip install akshare tushare --upgrade
           pip install -r requirements.txt
 
-      - name: ⚡️注入 Token 并运行 (双保险模式)
+      - name: ⚡️配置初始化并运行
         shell: bash -l {0}
         env:
           TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
-          # 确保 data 目录存在
+          # 1. 这一步是关键：创建一个基础的配置文件，防止 settings.py 报错
+          cat <<EOF > config.yaml
+          cron: false
+          data_dir: "data"
+          end_date: ""
+          codes: []
+          push:
+            enable: true
+            pushplus_token: "$PP_TOKEN"
+          EOF
+          
+          # 2. 确保数据目录存在
           mkdir -p data
           
-          # 直接运行 python，因为我们的 main.py 已经具备了自动生成配置的功能
+          # 3. 启动程序 (它会自动去抓 3000 只股票覆盖上面的 codes: [])
           python main.py
 
       - name: 上传结果
