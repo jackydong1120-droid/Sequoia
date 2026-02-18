@@ -1,6 +1,8 @@
 name: Sequoia Auto Picker
 
 on:
+  push:
+    branches: [ "master" ]
   schedule:
     - cron: '40 7 * * 1-5' # 每天北京时间 15:40 运行
   workflow_dispatch: 
@@ -16,35 +18,36 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2
         with:
           activate-environment: stock
-          python-version: "3.11" # 降回 3.11，兼容性更好且预编译包更多
+          python-version: "3.11"
           channels: conda-forge
 
       - name: 安装核心科学计算库 (Conda 方式)
         shell: bash -l {0}
         run: |
-          # 核心：先用 Conda 安装 numpy 和 pandas，避免 pip 编译报错
           conda install -c conda-forge ta-lib numpy pandas matplotlib scipy -y
 
       - name: 安装其余依赖 (Pip 方式)
         shell: bash -l {0}
         run: |
           pip install --upgrade pip
-          pip install akshare --upgrade # 确保使用最新版以兼容 3.11
+          pip install akshare --upgrade
           pip install -r requirements.txt
 
-      - name: 配置注入与测试设定
+      - name: 配置注入 (关键修改步骤)
         shell: bash -l {0}
         env:
           TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
-          cp config.yaml.example config.yaml
-          # 注入 Token
+          # 注意：这里删除了 cp config.yaml.example ... 那一行
+          # 程序现在会直接使用你提交的 config.yaml (里面只有三花智控)
+          
+          # 下面这两行保留，用于自动填入密码
+          # 如果你的 config.yaml 里没有 tushare_token 字段，这行也不会报错
           sed -i "s/tushare_token: .*/tushare_token: '$TS_TOKEN'/g" config.yaml
           sed -i "s/pushplus_token: .*/pushplus_token: '$PP_TOKEN'/g" config.yaml
-          # 仅测试三花智控
-          sed -i "s/codes: .*/codes: ['002050.SZ']/g" config.yaml
-          mkdir -p data # 防止目录缺失
+          
+          mkdir -p data
 
       - name: 运行 Sequoia 策略
         shell: bash -l {0}
