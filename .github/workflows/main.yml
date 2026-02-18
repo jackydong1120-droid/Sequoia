@@ -1,97 +1,52 @@
+name: Sequoia Auto Picker
+
 on:
   push:
     branches: [ "master" ]
-  workflow_dispatch:  # 必须有这一行，才会有手动运行按钮
-import settings
-import work_flow
-import akshare as ak
-import tushare as ts  # 引入 Tushare
-import pandas as pd
-import time
-import requests
-import os
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+  schedule:
+    - cron: '40 7 * * 1-5' # 每天北京时间 15:40 运行
+  workflow_dispatch: 
 
-# 1. 防抖补丁
-def apply_retry_strategy():
-    retry_strategy = Retry(
-        total=5, backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    http = requests.Session()
-    http.mount("https://", adapter)
-    http.mount("http://", adapter)
-    _original_request = requests.Session.request
-    def patched_request(self, method, url, *args, **kwargs):
-        if 'timeout' not in kwargs: kwargs['timeout'] = 60
-        return _original_request(self, method, url, *args, **kwargs)
-    requests.Session.request = patched_request
+jobs:
+  run-strategy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
 
-apply_retry_strategy()
+      - name: 配置 Python 环境
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: stock
+          python-version: "3.11"
+          channels: conda-forge
 
-# 2. 获取股票列表的函数 (双通道)
-def get_all_stock_codes():
-    codes = []
-    
-    # --- 通道 A: Akshare (东方财富) ---
-    try:
-        print("尝试通道 A (Akshare) 拉取名单...")
-        df = ak.stock_zh_a_spot_em()
-        codes = df['code'].tolist()
-        print(f"✅ 通道 A 成功！获取到 {len(codes)} 只股票。")
-    except Exception as e:
-        print(f"⚠️ 通道 A 失败: {e}")
-    
-    # --- 通道 B: Tushare (备用) ---
-    if not codes:
-        print("尝试通道 B (Tushare) 拉取名单...")
-        try:
-            # 从环境变量或配置读取 Token
-            token = os.environ.get('TS_TOKEN') or settings.config.get('tushare_token')
-            if token:
-                pro = ts.pro_api(token)
-                # 获取上市状态为 L (上市) 的股票
-                df = pro.stock_basic(exchange='', list_status='L', fields='symbol')
-                codes = df['symbol'].tolist()
-                print(f"✅ 通道 B 成功！获取到 {len(codes)} 只股票。")
-            else:
-                print("❌ 未找到 Tushare Token，跳过通道 B。")
-        except Exception as e:
-            print(f"⚠️ 通道 B 失败: {e}")
+      - name: 安装核心科学计算库
+        shell: bash -l {0}
+        run: |
+          conda install -c conda-forge ta-lib numpy pandas matplotlib scipy -y
 
-    # --- 统一过滤逻辑 ---
-    main_board_codes = []
-    for code in codes:
-        code = str(code)
-        if code.startswith('688'): continue  # 剔除科创
-        if code.startswith('30'):  continue  # 剔除创业
-        if code.startswith('8') or code.startswith('4'): continue # 剔除北交
-        
-        # 格式补全
-        if code.startswith('6'):
-            main_board_codes.append(f"{code}.SH")
-        else:
-            main_board_codes.append(f"{code}.SZ")
-            
-    return main_board_codes
+      - name: 安装其余依赖
+        shell: bash -l {0}
+        run: |
+          pip install --upgrade pip
+          pip install akshare tushare --upgrade
+          pip install -r requirements.txt
 
-if __name__ == '__main__':
-    settings.init()
-    
-    print("🚀 正在拉取全市场股票名单...")
-    final_codes = get_all_stock_codes()
-    
-    if final_codes:
-        print(f"✅ 最终筛选完成！即将扫描 {len(final_codes)} 只主板股票。")
-        settings.config['codes'] = final_codes
-    else:
-        print("❌ 所有通道均失败，将使用默认列表（如果是空的则不运行）。")
-        # 兜底：如果真的全失败了，强行塞一个三花智控进去测试，避免空跑
-        if not settings.config.get('codes'):
-            print("⚠️ 启用紧急兜底：仅测试三花智控")
-            settings.config['codes'] = ['002050.SZ']
+      - name: ⚡️注入 Token 并运行 (双保险模式)
+        shell: bash -l {0}
+        env:
+          TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          # 确保 data 目录存在
+          mkdir -p data
+          
+          # 直接运行 python，因为我们的 main.py 已经具备了自动生成配置的功能
+          python main.py
 
-    work_flow.prepare()
+      - name: 上传结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-report
+          path: data/stock.db
