@@ -1,41 +1,56 @@
-name: Sequoia Auto Run
+name: Sequoia Auto Picker
 
 on:
   schedule:
-    # 修改为北京时间 01:04 触发 (UTC 17:04)
-    - cron: '4 * * * *' 
-  workflow_dispatch:
+    - cron: '40 7 * * 1-5' # 每天北京时间 15:40 运行
+  workflow_dispatch: 
 
 jobs:
   run-strategy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Python
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python 环境
         uses: conda-incubator/setup-miniconda@v2
         with:
           activate-environment: stock
-          python-version: "3.12" # 升级版本以支持新库
+          python-version: "3.12"
           channels: conda-forge
 
-      - name: Install Libs
+      - name: 安装依赖库
         shell: bash -l {0}
         run: |
           conda install -c conda-forge ta-lib -y
           pip install akshare --upgrade
           pip install -r requirements.txt
 
-      - name: Config Injection
+      - name: 配置注入与测试设定
         shell: bash -l {0}
+        env:
+          TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
+          # 1. 准备配置文件
           cp config.yaml.example config.yaml
-          # 注入所有密钥
-          sed -i "s/tushare_token: .*/tushare_token: '${{ secrets.TUSHARE_TOKEN }}'/g" config.yaml
-          sed -i "s/pushplus_token: .*/pushplus_token: '${{ secrets.PUSHPLUS_TOKEN }}'/g" config.yaml
-          # 单票测试：只看三花智控
+          
+          # 2. 注入 Token (确保变量名和脚本匹配)
+          sed -i "s/tushare_token: .*/tushare_token: '$TS_TOKEN'/g" config.yaml
+          sed -i "s/pushplus_token: .*/pushplus_token: '$PP_TOKEN'/g" config.yaml
+          
+          # 3. 设置测试标的：三花智控
           sed -i "s/codes: .*/codes: ['002050.SZ']/g" config.yaml
-          mkdir -p data # 防止目录缺失报错
+          
+          # 4. 创建必要目录
+          mkdir -p data
 
-      - name: Run Sequoia
+      - name: 运行 Sequoia 策略
         shell: bash -l {0}
         run: python main.py
+
+      - name: 上传选股结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-report
+          path: data/stock.db
