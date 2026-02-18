@@ -16,14 +16,20 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2
         with:
           activate-environment: stock
-          python-version: "3.12"
+          python-version: "3.11" # 降回 3.11，兼容性更好且预编译包更多
           channels: conda-forge
 
-      - name: 安装依赖库
+      - name: 安装核心科学计算库 (Conda 方式)
         shell: bash -l {0}
         run: |
-          conda install -c conda-forge ta-lib -y
-          pip install akshare --upgrade
+          # 核心：先用 Conda 安装 numpy 和 pandas，避免 pip 编译报错
+          conda install -c conda-forge ta-lib numpy pandas matplotlib scipy -y
+
+      - name: 安装其余依赖 (Pip 方式)
+        shell: bash -l {0}
+        run: |
+          pip install --upgrade pip
+          pip install akshare --upgrade # 确保使用最新版以兼容 3.11
           pip install -r requirements.txt
 
       - name: 配置注入与测试设定
@@ -32,24 +38,19 @@ jobs:
           TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
-          # 1. 准备配置文件
           cp config.yaml.example config.yaml
-          
-          # 2. 注入 Token (确保变量名和脚本匹配)
+          # 注入 Token
           sed -i "s/tushare_token: .*/tushare_token: '$TS_TOKEN'/g" config.yaml
           sed -i "s/pushplus_token: .*/pushplus_token: '$PP_TOKEN'/g" config.yaml
-          
-          # 3. 设置测试标的：三花智控
+          # 仅测试三花智控
           sed -i "s/codes: .*/codes: ['002050.SZ']/g" config.yaml
-          
-          # 4. 创建必要目录
-          mkdir -p data
+          mkdir -p data # 防止目录缺失
 
       - name: 运行 Sequoia 策略
         shell: bash -l {0}
         run: python main.py
 
-      - name: 上传选股结果
+      - name: 上传结果
         uses: actions/upload-artifact@v4
         with:
           name: stock-report
