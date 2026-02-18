@@ -1,57 +1,41 @@
-name: Sequoia Daily Auto Run
+name: Sequoia Auto Run
 
 on:
   schedule:
-    # 每天北京时间 15:40 运行 (UTC 7:40)
-    - cron: '40 7 * * 1-5'
-  workflow_dispatch: # 允许你点击按钮随时手动运行
+    # 修改为北京时间 01:04 触发 (UTC 17:04)
+    - cron: '4 * * * *' 
+  workflow_dispatch:
 
 jobs:
   run-strategy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 配置 Conda 环境
+      - uses: actions/checkout@v4
+      - name: Setup Python
         uses: conda-incubator/setup-miniconda@v2
         with:
           activate-environment: stock
-          python-version: "3.12"
+          python-version: "3.12" # 升级版本以支持新库
           channels: conda-forge
 
-      - name: 安装 TA-Lib 和 依赖
+      - name: Install Libs
         shell: bash -l {0}
         run: |
           conda install -c conda-forge ta-lib -y
+          pip install akshare --upgrade
           pip install -r requirements.txt
 
-      - name: 注入 Token
+      - name: Config Injection
         shell: bash -l {0}
         run: |
           cp config.yaml.example config.yaml
-          # 使用 Secret 安全注入 Token
+          # 注入所有密钥
           sed -i "s/tushare_token: .*/tushare_token: '${{ secrets.TUSHARE_TOKEN }}'/g" config.yaml
+          sed -i "s/pushplus_token: .*/pushplus_token: '${{ secrets.PUSHPLUS_TOKEN }}'/g" config.yaml
+          # 单票测试：只看三花智控
+          sed -i "s/codes: .*/codes: ['002050.SZ']/g" config.yaml
+          mkdir -p data # 防止目录缺失报错
 
-      - name: 执行选股程序 (单票测试)
-  shell: bash -l {0}
-  env:
-    TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
-  run: |
-    cp config.yaml.example config.yaml
-    sed -i "s/tushare_token: .*/tushare_token: '$TS_TOKEN'/g" config.yaml
-
-    # 暂时只测试三花智控 (002050.SZ)，防止大范围扫描报错
-    sed -i "s/codes: .*/codes: ['002050.SZ']/g" config.yaml
-
-    # 这一行必加！创建 data 文件夹防止 Exit code 1
-    mkdir -p data
-
-    python main.py
-
-      - name: 上传选股结果 (Artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: stock-report
-          path: data/stock.db
+      - name: Run Sequoia
+        shell: bash -l {0}
+        run: python main.py
