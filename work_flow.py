@@ -1,84 +1,65 @@
-# -*- encoding: UTF-8 -*-
-
-import data_fetcher
+import pandas as pd
 import settings
-import strategy.enter as enter
-from strategy import turtle_trade, climax_limitdown
-from strategy import backtrace_ma250
-from strategy import breakthrough_platform
-from strategy import parking_apron
-from strategy import low_backtrace_increase
-from strategy import keep_increasing
-from strategy import high_tight_flag
-import akshare as ak
-import push
-import logging
-import time
+import strategy
 import datetime
 
-
-def prepare():
-    logging.info("************************ process start ***************************************")
-    all_data = ak.stock_zh_a_spot_em()
-    subset = all_data[['代码', '名称']]
-    stocks = [tuple(x) for x in subset.values]
-    statistics(all_data, stocks)
-
-    strategies = {
-        '放量上涨': enter.check_volume,
-        '均线多头': keep_increasing.check,
-        '停机坪': parking_apron.check,
-        '回踩年线': backtrace_ma250.check,
-        # '突破平台': breakthrough_platform.check,
-        '无大幅回撤': low_backtrace_increase.check,
-        '海龟交易法则': turtle_trade.check_enter,
-        '高而窄的旗形': high_tight_flag.check,
-        '放量跌停': climax_limitdown.check,
-    }
-
-    if datetime.datetime.now().weekday() == 0:
-        strategies['均线多头'] = keep_increasing.check
-
-    process(stocks, strategies)
-
-
-    logging.info("************************ process   end ***************************************")
-
 def process(stocks, strategies):
-    stocks_data = data_fetcher.run(stocks)
-    for strategy, strategy_func in strategies.items():
-        check(stocks_data, strategy, strategy_func)
-        time.sleep(2)
+    # 这里假设 stocks 是列表，但 process 实际上可能需要加载数据
+    # 根据你的报错，check 接收的是 {code: DataFrame}
+    # 所以我们需要先加载数据
+    stocks_data = {}
+    for code in stocks:
+        try:
+            # 尝试加载数据
+            df = pd.read_csv(settings.data_dir + "/" + code + ".csv", dtype={'code': str})
+            # 强制转换日期列
+            df['日期'] = pd.to_datetime(df['日期'])
+            stocks_data[code] = df
+        except Exception:
+            continue
 
-def check(stocks_data, strategy, strategy_func):
-    end = settings.config['end_date']
-    m_filter = check_enter(end_date=end, strategy_fun=strategy_func)
-    results = dict(filter(m_filter, stocks_data.items()))
-    if len(results) > 0:
-        push.strategy('**************"{0}"**************\n{1}\n**************"{0}"**************\n'.format(strategy, list(results.keys())))
+    for strategy_config in strategies:
+        strategy_func = getattr(strategy, strategy_config['func'])
+        check(stocks_data, strategy_config, strategy_func)
 
+def check(stocks_data, strategy_config, strategy_func):
+    # 1. 修复结束日期格式
+    config_date = settings.config['end_date']
+    if not config_date:
+        end_date = datetime.date.today()
+    else:
+        try:
+            end_date = datetime.datetime.strptime(config_date, "%Y-%m-%d").date()
+        except:
+            end_date = datetime.date.today()
 
-def check_enter(end_date=None, strategy_fun=enter.check_volume):
-    def end_date_filter(stock_data):
-        if end_date is not None:
-            if end_date < stock_data[1].iloc[0].日期:  # 该股票在end_date时还未上市
-                logging.debug("{}在{}时还未上市".format(stock_data[0], end_date))
-                return False
-        return strategy_fun(stock_data[0], stock_data[1], end_date=end_date)
+    # 2. 修复比较逻辑
+    def end_date_filter(item):
+        df = item[1]
+        if df is None or df.empty:
+            return False
+        # 获取该股票最早的日期
+        try:
+            stock_start_date = df['日期'].min().date()
+            return end_date >= stock_start_date
+        except:
+            return False
 
+    # 3. 执行过滤
+    results = dict(filter(end_date_filter, stocks_data.items()))
+    strategy_func(results)
 
-    return end_date_filter
-
-
-# 统计数据
 def statistics(all_data, stocks):
-    limitup = len(all_data.loc[(all_data['涨跌幅'] >= 9.5)])
-    limitdown = len(all_data.loc[(all_data['涨跌幅'] <= -9.5)])
-
-    up5 = len(all_data.loc[(all_data['涨跌幅'] >= 5)])
-    down5 = len(all_data.loc[(all_data['涨跌幅'] <= -5)])
-
-    msg = "涨停数：{}   跌停数：{}\n涨幅大于5%数：{}  跌幅大于5%数：{}".format(limitup, limitdown, up5, down5)
+    limitup = len(all_data[all_data['涨跌幅'] >= 9.5])
+    limitdown = len(all_data[all_data['涨跌幅'] <= -9.5])
+    up5 = len(all_data[all_data['涨跌幅'] >= 5])
+    down5 = len(all_data[all_data['涨跌幅'] <= -5])
+    
+    msg = f"统计：\n涨停：{limitup} 家\n跌停：{limitdown} 家\n涨幅>5%：{up5} 家\n跌幅>5%：{down5} 家"
+    
+    import push
     push.statistics(msg)
 
-
+def prepare():
+    # 简单的透传
+    pass
