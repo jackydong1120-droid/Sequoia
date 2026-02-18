@@ -14,14 +14,14 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 配置 Python 环境
+      - name: 配置 Python 环境 (Miniconda)
         uses: conda-incubator/setup-miniconda@v2
         with:
           activate-environment: stock
           python-version: "3.11"
           channels: conda-forge
 
-      - name: 安装核心库
+      - name: 安装 TA-Lib 及科学计算库
         shell: bash -l {0}
         run: |
           conda install -c conda-forge ta-lib numpy pandas matplotlib scipy -y
@@ -33,13 +33,13 @@ jobs:
           pip install akshare tushare --upgrade
           pip install -r requirements.txt
 
-      - name: ⚡️初始化并全量运行
+      - name: ⚡️初始化并强制全量运行
         shell: bash -l {0}
         env:
           TS_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           PP_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: |
-          # 现场生成配置，解决 FileNotFoundError
+          # 1. 现场生成基础配置文件
           cat <<EOF > config.yaml
           cron: false
           data_dir: "data"
@@ -50,12 +50,15 @@ jobs:
             pushplus_token: "$PP_TOKEN"
           EOF
           
+          # 2. 准备数据目录
           mkdir -p data
-          # 启动导弹
+          
+          # 3. 运行增强版主程序
           python main.py
 
-      - name: 上传结果
+      - name: 上传结果 (Artifacts)
+        if: always() # 无论成功失败都尝试上传，方便调试
         uses: actions/upload-artifact@v4
         with:
           name: stock-report
-          path: data/stock.db
+          path: data/
